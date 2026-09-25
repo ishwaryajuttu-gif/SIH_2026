@@ -1,0 +1,10 @@
+# Python 3.10 - 3.12 recommended (MediaPipe wheels)
+ultralytics>=8.3.0
+mediapipe>=0.10.14
+opencv-python>=4.8
+numpy
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart
+pyyaml
+pyttsx3>=2.90

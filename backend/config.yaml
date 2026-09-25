@@ -1,0 +1,166 @@
+# ================================================================
+#  BAS-HAR prototype - AI-assisted Human Activity Recognition for on-board BAS experiments
+#
+#  PROTOTYPE / CONTROLLED DEMONSTRATION.
+#  The current prototype uses pretrained computer-vision models for perception and a
+#  controlled demonstration environment for activity recognition. The architecture is
+#  designed so that mission-specific BAS datasets can later be used for domain-specific
+#  fine-tuning and validation.
+#
+#  Every key below is validated at start-up (app/config.py) and read by the runtime.
+#  Frame-based thresholds depend on the processing FPS (see the dashboard FPS read-out).
+# ================================================================
+
+app:
+  title: "BAS-HAR Prototype"
+  subtitle: "AI-assisted Human Activity Recognition - controlled demonstration"
+
+# ---------------- Video input ----------------
+video:
+  mode: webcam           # webcam (PRIMARY, live demo) | file (secondary / fallback)
+  camera_index: 0        # which webcam; run.bat 1 (or env BAS_CAMERA=1) overrides this
+  file: data/videos/hand_demo.mp4   # used only when mode == file
+  frame_width: 1280      # resolution requested from the webcam
+  frame_height: 720
+  process_width: 640     # frames are downscaled to this width before AI inference
+  max_processing_fps: 15 # processing_frequency: cap on analysed frames per second (saves CPU)
+  loop_video: true       # loop video files (file mode only)
+  jpeg_quality: 70       # quality of the annotated dashboard stream
+  camera_open_timeout_s: 5   # how long to wait for the first webcam frame before reporting an error
+  camera_stall_s: 3          # no new frame for this long -> camera reported as stalled
+
+# ---------------- Object perception (pretrained YOLO) ----------------
+detector:
+  # coco   -> pretrained YOLO11n (COCO classes). No BAS-specific training.
+  # world  -> YOLO-World open-vocabulary model (text prompts), optional
+  # custom -> your own fine-tuned weights (tools/train.py), future work
+  mode: coco
+  model: models/yolo11n.pt
+  world_model: models/yolov8s-worldv2.pt
+  custom_model: models/bas_custom.pt
+  conf: 0.35
+  class_conf:            # stricter thresholds for classes that are easily confused with hands
+    cell phone: 0.55
+    remote: 0.55
+  imgsz: 480             # YOLO input size (smaller = faster on CPU)
+  detect_every: 2        # run YOLO on every Nth analysed frame; the tracker holds boxes in between
+
+  # Pretrained COCO class -> label shown in the dashboard.
+  # These are REPRESENTATIVE DEMONSTRATION OBJECTS (BAS equipment stand-ins).
+  # YOLO has NOT learned real BAS hardware; it detects the everyday object.
+  class_map:
+    person: "Person"
+    bottle: "Sample Container Stand-in"
+    cup: "Culture Vessel Stand-in"
+    cell phone: "Data Tablet Stand-in"
+    scissors: "Sharp Tool Stand-in"
+
+  # Used only when mode == world. Prompt text -> dashboard label.
+  world_prompts:
+    petri dish: "Culture Vessel Stand-in"
+    test tube: "Sample Container Stand-in"
+    tablet: "Data Tablet Stand-in"
+    scissors: "Sharp Tool Stand-in"
+
+  # Stand-ins that represent restricted equipment -> critical alert on interaction
+  restricted_objects: ["Sharp Tool Stand-in"]
+
+# ---------------- Lightweight tracking (IoU + centre-distance fallback) ----------------
+tracker:
+  iou_match: 0.3         # IoU needed to match a detection to an existing track
+  center_match: 0.75     # fallback: same-label match if centre moved < 0.75 x box size (fast motion)
+  max_missed: 30         # detector runs an object may be missing (hidden by a hand) before the track is dropped
+  smoothing: 0.5         # box smoothing factor (0 = none, 0.9 = heavy)
+  min_hits: 3            # an object must be detected in N detector runs before it is trusted
+
+# ---------------- Hand landmark perception (pretrained MediaPipe) ----------------
+hands:
+  enabled: true
+  model: models/hand_landmarker.task   # prepared by setup.bat - never downloaded during a demo
+  max_hands: 2
+  min_detection_conf: 0.5
+  min_tracking_conf: 0.5
+
+# ---------------- 2D vision-based interaction estimation ----------------
+interaction:
+  contact_margin: 0.12   # object box expanded by 12%; fingertip/palm inside = CONTACT (2D estimate)
+  near_factor: 1.6       # within 1.6 x hand-size of the box = NEAR
+
+# ---------------- Temporal reasoning / activity state machine ----------------
+activity:
+  approach_confirm_frames: 3      # consecutive NEAR frames before HAND_NEAR_EQUIPMENT
+  interaction_confirm_frames: 4   # consecutive CONTACT frames before INTERACTING (single frames are ignored)
+  release_confirm_frames: 8       # consecutive non-contact frames (hand visible) before release is accepted
+  min_interaction_s: 0.5          # shorter contacts are logged as brief and do not count as an activity
+  interaction_cooldown_s: 1.5     # after COMPLETED, the same object cannot start a new interaction for this long
+  move_threshold: 0.06            # object displacement (fraction of frame diagonal) -> MANIPULATING
+  missing_as_held_frames: 6       # object hidden this many frames while in contact -> treated as held
+  hand_lost_grace_s: 1.5          # hand tracking lost during an interaction: hold state this long, never "complete"
+  max_interaction_s: 20           # longer interaction -> "prolonged interaction" warning
+  person_confirm_frames: 5        # frames with a person/hand before PERSON_DETECTED
+  person_lost_frames: 45          # frames without a person before PERSON_LEFT
+  stability_window: 15            # frames used to compute Activity Stability
+
+# ---------------- Rule-based safety engine ----------------
+safety:
+  restricted_confirm_frames: 3    # frames a hand must be inside a restricted zone before WARNING
+  zone_exit_s: 1.0                # hand must be outside (or not tracked) this long before the zone clears
+  critical_after_s: 3.0           # staying inside a restricted zone longer than this -> CRITICAL
+  alert_cooldown_s: 8             # the same alert (same zone/object) is not repeated within this time
+  unexpected_move_threshold: 0.10 # object moves this far (frame diagonal) with no hand near -> WARNING
+  unexpected_move_window: 12      # ... measured over this many detector runs
+  stable_object_frames: 20        # object must have been seen this many detector runs before "missing" can fire
+  missing_object_s: 5             # stable object disappears without being handled -> WARNING
+  recent_alert_s: 3               # dashboard safety level stays WARNING/CRITICAL this long after an alert
+
+  # Zones in normalised image coordinates (0..1), drawn/edited in the dashboard.
+  # Dashboard edits are saved to data/zones.json and override these defaults.
+  # type: restricted  -> WARNING on entry, CRITICAL if the hand stays
+  # type: workstation -> marks the demo work area (a tray); entry = APPROACHING_WORKSTATION
+  zones:
+    - id: zone-restricted
+      name: "RESTRICTED ZONE"
+      type: restricted
+      enabled: true
+      points: [[0.70, 0.08], [0.96, 0.08], [0.96, 0.50], [0.70, 0.50]]
+    - id: zone-workstation
+      name: "Workstation (tray)"
+      type: workstation
+      enabled: true
+      points: [[0.20, 0.45], [0.68, 0.45], [0.68, 0.98], [0.20, 0.98]]
+
+# ---------------- Representative demo workflow ----------------
+# This workflow is a representative demonstration sequence created to validate the
+# prototype's activity-recognition architecture. It is NOT an official BAS/ISRO protocol.
+workflow:
+  name: "Representative Demo Workflow"
+  steps:
+    - id: S1
+      name: "Inspect sample container stand-in"
+      object: "Sample Container Stand-in"
+      action: interact          # interact = handle, move = pick up and relocate
+    - id: S2
+      name: "Transfer culture vessel stand-in"
+      object: "Culture Vessel Stand-in"
+      action: move
+    - id: S3
+      name: "Log reading on data tablet stand-in"
+      object: "Data Tablet Stand-in"
+      action: interact
+
+# ---------------- Offline voice alerts ----------------
+voice:
+  enabled: true
+  rate: 170
+  cooldown_s: 8                   # the same phrase is not spoken again within this time
+  speak_workflow: false           # also announce demo-workflow step completion
+  phrases:
+    restricted_zone: "Warning. Restricted zone interaction detected."
+    unexpected: "Warning. Unexpected activity detected."
+    critical: "Critical alert. Unsafe interaction detected."
+
+# ---------------- Event logging (metadata only - no video is ever recorded) ----------------
+logging:
+  dir: logs
+  keep_in_memory: 1000
+  active_alert_window_s: 120      # unacknowledged alerts stay in the Alerts panel this long
