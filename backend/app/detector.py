@@ -154,8 +154,33 @@ class ObjectDetector:
         self.class_conf: dict[str, float] = {k: float(v) for k, v in (dcfg.get("class_conf") or {}).items()}
         self.imgsz = int(dcfg.get("imgsz", 640))
         self.class_map: dict[str, str] = dict(dcfg.get("class_map", {}))
-        key = {"world": "world_model", "custom": "custom_model"}.get(self.mode, "model")
-        self.model_path = resolve_path(dcfg.get(key, "models/yolo11n.pt"))
+
+        # Configurable model paths
+        custom_target = dcfg.get("model_path") or dcfg.get("custom_model", "models/best.pt")
+        base_model_path = resolve_path(dcfg.get("model", "models/yolo11n.pt"))
+        world_model_path = resolve_path(dcfg.get("world_model", "models/yolov8s-worldv2.pt"))
+
+        self.model_source = "BASE PRETRAINED MODEL"
+        if self.mode == "custom":
+            custom_path = resolve_path(custom_target)
+            if custom_path.exists():
+                self.model_path = custom_path
+                self.model_source = "CUSTOM MODEL"
+            else:
+                log.warning(
+                    "Custom model '%s' not found. Falling back to BASE PRETRAINED MODEL (%s).",
+                    custom_path, base_model_path,
+                )
+                self.model_path = base_model_path
+                self.model_source = "BASE PRETRAINED MODEL (fallback: custom model not found)"
+                self.mode = "coco"
+        elif self.mode == "world":
+            self.model_path = world_model_path
+            self.model_source = "YOLO-WORLD MODEL"
+        else:
+            self.model_path = base_model_path
+            self.model_source = "BASE PRETRAINED MODEL"
+
         self.model_name = self.model_path.name
         if not self.model_path.exists():
             raise ModelMissingError(
@@ -171,12 +196,26 @@ class ObjectDetector:
             self.model.set_classes(list(prompts.keys()) + ["person"])
             self.class_map = {**prompts, "person": self.class_map.get("person", "Person")}
         elif self.mode == "custom":
-            for name in self.model.names.values():  # a custom model's classes are used as-is unless mapped
-                self.class_map.setdefault(name, name.replace("_", " ").title())
+            # Map custom stand-in classes to dashboard display names
+            CUSTOM_DISPLAY_MAP = {
+                "person": "Person",
+                "sample_container": "Sample Container",
+                "culture_vessel": "Culture Vessel",
+                "data_tablet": "Data Tablet",
+                "restricted_tool": "Restricted Tool",
+            }
+            for name in self.model.names.values():
+                if name in CUSTOM_DISPLAY_MAP and name not in self.class_map:
+                    self.class_map[name] = CUSTOM_DISPLAY_MAP[name]
+                else:
+                    self.class_map.setdefault(name, name.replace("_", " ").title())
 
         names = self.model.names  # id -> name
         self.class_ids = [i for i, n in names.items() if n in self.class_map]
-        log.info("YOLO loaded: %s (%s), %d mapped classes", self.model_name, self.mode, len(self.class_ids))
+        log.info(
+            "YOLO loaded: %s [%s] (%s), %d mapped classes",
+            self.model_name, self.model_source, self.mode, len(self.class_ids),
+        )
         # warm-up so the first real frame is not slow
         self.model.predict(np.zeros((360, 640, 3), np.uint8), imgsz=self.imgsz, verbose=False)
 

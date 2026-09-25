@@ -9,7 +9,12 @@ backend/data/videos/*
 !backend/data/videos/hand_demo.mp4
 backend/data/zones.json
 backend/models/*.part
-dataset/
+dataset/images/*/*
+!dataset/images/*/.gitkeep
+dataset/labels/*/*
+!dataset/labels/*/.gitkeep
 runs/
+training/runs/
+models/*.pt
 *.engine
 *.onnx

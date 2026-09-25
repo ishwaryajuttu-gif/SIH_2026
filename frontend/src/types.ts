@@ -117,6 +117,7 @@ export interface Status {
   max_processing_fps: number
   model: string
   detector_mode: string
+  model_source?: string
   hand_backend: string
   voice_enabled: boolean
   voice_available: boolean

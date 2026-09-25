@@ -23,10 +23,15 @@ class Step:
     completed_at: float | None = None
 
     def matches(self, act: CompletedActivity) -> bool:
-        if act.object != self.object:
-            return False
-        # a "move" step needs a real move; an "interact" step accepts any confirmed handling
-        return self.action != "move" or act.action == "move"
+        if act.object == self.object:
+            return self.action != "move" or act.action == "move"
+        # Support both custom model labels (e.g. "Sample Container") and
+        # stand-in labels (e.g. "Sample Container Stand-in")
+        norm_step = self.object.replace(" Stand-in", "").strip().lower()
+        norm_act = act.object.replace(" Stand-in", "").strip().lower()
+        if norm_step == norm_act:
+            return self.action != "move" or act.action == "move"
+        return False
 
 
 class WorkflowTracker:
@@ -51,7 +56,14 @@ class WorkflowTracker:
 
     @property
     def tracked_objects(self) -> set[str]:
-        return {s.object for s in self.steps}
+        objs = {s.object for s in self.steps}
+        equiv = set()
+        for o in objs:
+            if " Stand-in" in o:
+                equiv.add(o.replace(" Stand-in", "").strip())
+            else:
+                equiv.add(f"{o} Stand-in")
+        return objs | equiv
 
     def on_activity(self, act: CompletedActivity):
         if self.completed or not self.steps or act.object not in self.tracked_objects:

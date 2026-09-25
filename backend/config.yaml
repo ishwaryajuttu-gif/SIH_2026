@@ -29,15 +29,18 @@ video:
   camera_open_timeout_s: 5   # how long to wait for the first webcam frame before reporting an error
   camera_stall_s: 3          # no new frame for this long -> camera reported as stalled
 
-# ---------------- Object perception (pretrained YOLO) ----------------
+# ---------------- Object perception (pretrained or custom YOLO) ----------------
 detector:
   # coco   -> pretrained YOLO11n (COCO classes). No BAS-specific training.
   # world  -> YOLO-World open-vocabulary model (text prompts), optional
-  # custom -> your own fine-tuned weights (tools/train.py), future work
-  mode: coco
+  # custom -> fine-tuned weights on BAS stand-in classes (models/best.pt)
+  # NOTE: When set to 'custom', if model_path does not exist yet,
+  # the system safely falls back to the base pretrained model with clear UI/log notification.
+  mode: custom
   model: models/yolo11n.pt
+  model_path: models/best.pt
   world_model: models/yolov8s-worldv2.pt
-  custom_model: models/bas_custom.pt
+  custom_model: models/best.pt
   conf: 0.35
   class_conf:            # stricter thresholds for classes that are easily confused with hands
     cell phone: 0.55
@@ -45,15 +48,18 @@ detector:
   imgsz: 480             # YOLO input size (smaller = faster on CPU)
   detect_every: 2        # run YOLO on every Nth analysed frame; the tracker holds boxes in between
 
-  # Pretrained COCO class -> label shown in the dashboard.
+  # Pretrained COCO and Custom BAS classes -> label shown in the dashboard.
   # These are REPRESENTATIVE DEMONSTRATION OBJECTS (BAS equipment stand-ins).
-  # YOLO has NOT learned real BAS hardware; it detects the everyday object.
   class_map:
     person: "Person"
     bottle: "Sample Container Stand-in"
     cup: "Culture Vessel Stand-in"
     cell phone: "Data Tablet Stand-in"
     scissors: "Sharp Tool Stand-in"
+    sample_container: "Sample Container"
+    culture_vessel: "Culture Vessel"
+    data_tablet: "Data Tablet"
+    restricted_tool: "Restricted Tool"
 
   # Used only when mode == world. Prompt text -> dashboard label.
   world_prompts:
@@ -63,7 +69,7 @@ detector:
     scissors: "Sharp Tool Stand-in"
 
   # Stand-ins that represent restricted equipment -> critical alert on interaction
-  restricted_objects: ["Sharp Tool Stand-in"]
+  restricted_objects: ["Sharp Tool Stand-in", "Restricted Tool"]
 
 # ---------------- Lightweight tracking (IoU + centre-distance fallback) ----------------
 tracker:

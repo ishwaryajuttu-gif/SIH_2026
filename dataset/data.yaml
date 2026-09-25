@@ -1,0 +1,23 @@
+# ================================================================
+# BAS-HAR Custom Object Detection Dataset Configuration (YOLO format)
+#
+# IMPORTANT:
+# These objects are representative demonstration stand-ins used to validate
+# the human activity recognition pipeline. They are NOT official ISRO BAS hardware.
+# ================================================================
+
+path: .  # Root directory of dataset (relative to this file)
+train: images/train
+val: images/val
+test: images/test
+
+# Number of classes
+nc: 5
+
+# Stand-in classes for BAS-like experimental operations
+names:
+  0: person
+  1: sample_container
+  2: culture_vessel
+  3: data_tablet
+  4: restricted_tool

@@ -14,8 +14,11 @@ export function DetectionPanel({ state }: { state: LiveState | null }) {
         </span>
       </header>
       <p className="note">
-        Pretrained YOLO (COCO) detecting representative demonstration objects - BAS equipment stand-ins, not real BAS
-        hardware.
+        {state?.status?.model_source?.includes('CUSTOM MODEL')
+          ? 'Custom YOLO detector active: recognizing BAS experimental stand-in objects (Sample Container, Culture Vessel, Data Tablet, Restricted Tool).'
+          : state?.status?.model_source?.includes('fallback')
+            ? 'FALLBACK: Base pretrained YOLO (COCO) active because custom model weights were not found. Detecting equipment stand-ins.'
+            : 'Pretrained YOLO (COCO) detecting representative demonstration objects - BAS equipment stand-ins, not real BAS hardware.'}
       </p>
       <table className="table">
         <thead>

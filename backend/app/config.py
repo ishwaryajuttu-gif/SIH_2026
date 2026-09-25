@@ -40,7 +40,7 @@ SCHEMA: dict[str, dict[str, tuple]] = {
         "camera_open_timeout_s": (NUM, 1, 60), "camera_stall_s": (NUM, 0.5, 60),
     },
     "detector": {
-        "mode": (str,), "model": (str,), "world_model": (str,), "custom_model": (str,),
+        "mode": (str,), "model": (str,), "model_path": (str,), "world_model": (str,), "custom_model": (str,),
         "conf": (NUM, 0.01, 0.99), "class_conf": (dict,), "imgsz": (int, 160, 1280),
         "detect_every": (int, 1, 10), "class_map": (dict,), "world_prompts": (dict,),
         "restricted_objects": (list,),
@@ -83,7 +83,15 @@ VOICE_PHRASES = {"restricted_zone", "unexpected", "critical"}
 
 def resolve_path(p: str | os.PathLike) -> Path:
     path = Path(p)
-    return path if path.is_absolute() else BACKEND_DIR / path
+    if path.is_absolute():
+        return path
+    if (BACKEND_DIR / path).exists():
+        return BACKEND_DIR / path
+    if (BACKEND_DIR.parent / path).exists():
+        return BACKEND_DIR.parent / path
+    if (BACKEND_DIR.parent / path).parent.exists():
+        return BACKEND_DIR.parent / path
+    return BACKEND_DIR / path
 
 
 def validate_zone(z: dict, i: int = 0) -> dict:

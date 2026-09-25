@@ -483,3 +483,38 @@ def test_unavailable_camera_reports_error_instead_of_fake_frames():
     missing = VideoSource("file", "data/videos/does_not_exist.mp4")
     missing._thread.join(3)
     assert missing.state == "error" and "not found" in missing.error
+
+
+# ------------------------------------------------------------------ custom YOLO & workflow tests
+def test_workflow_matches_custom_and_standin_names():
+    from app.activity import CompletedActivity
+    from app.procedure import Step, WorkflowTracker
+    from app.events import EventLog
+
+    step = Step("S1", "Inspect sample container", "Sample Container Stand-in", "interact")
+    act_standin = CompletedActivity(1, "Sample Container Stand-in", "interact", 1.0, 0.0, "Right")
+    act_custom = CompletedActivity(1, "Sample Container", "interact", 1.0, 0.0, "Right")
+    act_other = CompletedActivity(1, "Culture Vessel", "interact", 1.0, 0.0, "Right")
+
+    assert step.matches(act_standin)
+    assert step.matches(act_custom)
+    assert not step.matches(act_other)
+
+    cfg = load_config(use_env=False, use_zone_file=False)
+    events = EventLog(cfg)
+    tracker = WorkflowTracker(cfg, events)
+    assert "Sample Container" in tracker.tracked_objects
+    assert "Sample Container Stand-in" in tracker.tracked_objects
+
+
+def test_custom_detector_fallback_when_best_pt_missing():
+    cfg = load_config(use_env=False, use_zone_file=False)
+    cfg["detector"]["mode"] = "custom"
+    cfg["detector"]["model_path"] = "models/non_existent_weights.pt"
+    
+    from app.detector import ObjectDetector
+    det = ObjectDetector(cfg)
+    assert det.mode == "coco"
+    assert "fallback" in det.model_source.lower()
+    assert det.model_path.name == "yolo11n.pt"
+

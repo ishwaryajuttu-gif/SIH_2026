@@ -120,7 +120,7 @@ export function SystemStatus({
 
       <dl className="kv">
         <div><dt>Mode</dt><dd>{s ? (s.mode === 'webcam' ? `LIVE webcam ${s.source}` : `file ${s.source}`) : '-'}</dd></div>
-        <div><dt>Detector</dt><dd>{s ? `${s.model} (${s.detector_mode}, pretrained)` : '-'}</dd></div>
+        <div><dt>Detector</dt><dd>{s ? `${s.model} (${s.model_source || (s.detector_mode === 'custom' ? 'CUSTOM MODEL' : 'BASE PRETRAINED MODEL')})` : '-'}</dd></div>
         <div><dt>Frame</dt><dd className="num">{s ? `${s.frame_size[0]}×${s.frame_size[1]}` : '-'}</dd></div>
         <div><dt>Uptime</dt><dd className="num">{s ? fmtDur(s.uptime_s) : '-'}</dd></div>
         <div><dt>Session log (metadata only)</dt><dd className="small">{s?.log_file ?? '-'}</dd></div>

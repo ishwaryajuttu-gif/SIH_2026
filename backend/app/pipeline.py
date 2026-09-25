@@ -257,7 +257,7 @@ class Pipeline:
             log.warning("config: %s", w)
         self.events.emit(
             "SYSTEM_START", "info",
-            f"Pipeline started - YOLO: {'ready' if self.detector else 'ERROR'}, "
+            f"Pipeline started - YOLO: {'ready [' + self.detector.model_source + ']' if self.detector else 'ERROR'}, "
             f"MediaPipe: {self.hands.backend if self.hands else 'disabled'}",
             activity="SYSTEM_START", state="IDLE",
         )
@@ -460,7 +460,7 @@ class Pipeline:
             yolo = comp("error", self.detector_error)
         else:
             yolo = comp("active" if now - self.last_detect_ts < 2.0 else "ready",
-                        f"{self.detector.model_name} ({self.detector.mode}), every {self.detect_every} frame(s)")
+                        f"{self.detector.model_name} [{self.detector.model_source}], every {self.detect_every} frame(s)")
         if self.hands is None:
             mp = comp("disabled", "hands.enabled = false")
         elif not self.hands.available:
@@ -503,7 +503,8 @@ class Pipeline:
             "last_error": self.last_error,
             "max_processing_fps": round(1.0 / self.min_period, 1),
             "model": self.detector.model_name if self.detector else "unavailable",
-            "detector_mode": self.cfg["detector"]["mode"],
+            "detector_mode": self.detector.mode if self.detector else self.cfg["detector"]["mode"],
+            "model_source": self.detector.model_source if self.detector else "UNAVAILABLE",
             "hand_backend": self.hands.backend if self.hands else "disabled",
             "voice_enabled": self.voice.enabled,
             "voice_available": self.voice.available,
