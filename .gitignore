@@ -21,8 +21,12 @@ dataset/raw/
 dataset/bas/
 dataset/bas_reviewed/
 dataset/*.zip
-evaluation/results/*/_aligned_split/
+# evaluation copies the split (_aligned_split) and Ultralytics saves val_batch*.jpg grids of it
+evaluation/results/**/_aligned_split/
+evaluation/results/**/*.jpg
+# model weights (fine-tuned ones are trained on the recordings) and the Colab download
 yolov8s-worldv2.pt
-backend/models/yolov8s-worldv2.pt
+backend/models/*.pt
+*_results.zip
 *.engine
 *.onnx
