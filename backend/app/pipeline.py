@@ -22,7 +22,7 @@ from .config import resolve_path
 from .detector import ObjectDetector, SimpleTracker
 from .events import EventLog
 from .hands import HandTracker
-from .interaction import HUMAN_LABELS, InteractionAnalyzer
+from .interaction import HUMAN_LABELS, InteractionAnalyzer, reasoning_tracks
 from .overlay import draw
 from .procedure import WorkflowTracker
 from .safety import SafetyMonitor
@@ -225,6 +225,7 @@ class Pipeline:
         self.safety = SafetyMonitor(cfg, self.events)
         self.workflow = WorkflowTracker(cfg, self.events)
         self.restricted = set(cfg["detector"]["restricted_objects"])
+        self.surface = set(cfg["detector"]["surface_objects"])
 
         self.source: VideoSource | None = None
         self.paused = False
@@ -366,14 +367,15 @@ class Pipeline:
             self.last_hands_ts = time.time()
         t3 = time.perf_counter()
 
-        inters = self.analyzer.analyze(hands, tracks)
+        logic = reasoning_tracks(tracks, self.surface)   # the tray is drawn, but not "interacted with"
+        inters = self.analyzer.analyze(hands, logic)
         best = self.analyzer.per_object(inters)
         now = time.time()
-        for done in self.activity.update(tracks, best, len(hands), diag, now):
+        for done in self.activity.update(logic, best, len(hands), diag, now):
             self.workflow.on_activity(done)
-        self.safety.update(hands, tracks, self.activity, w, h, now)
+        self.safety.update(hands, logic, self.activity, w, h, now)
         zones = self.safety.zone_state()
-        scene = derive_scene(self.activity, self.safety, tracks, now)
+        scene = derive_scene(self.activity, self.safety, logic, now)
         t4 = time.perf_counter()
 
         if time.time() - self._last_viewer < 3.0 or self._jpeg is None:  # only encode when someone watches

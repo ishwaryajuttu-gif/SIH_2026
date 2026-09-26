@@ -56,6 +56,7 @@ detector:
     cup: "Culture Vessel Stand-in"
     cell phone: "Data Tablet Stand-in"
     scissors: "Sharp Tool Stand-in"
+    tray: "Experimental Workstation Stand-in"   # only produced by the fine-tuned model (not a COCO class)
     sample_container: "Sample Container"
     culture_vessel: "Culture Vessel"
     data_tablet: "Data Tablet"
@@ -70,6 +71,11 @@ detector:
 
   # Stand-ins that represent restricted equipment -> critical alert on interaction
   restricted_objects: ["Sharp Tool Stand-in", "Restricted Tool"]
+
+  # Surface stand-ins: detected and drawn, but NOT treated as equipment a hand interacts with.
+  # Every other object stands on the tray, so a hand reaching for the bottle is always "inside" the
+  # tray box; without this the timeline would fill with tray interactions. Use [] to disable.
+  surface_objects: ["Experimental Workstation Stand-in"]
 
 # ---------------- Lightweight tracking (IoU + centre-distance fallback) ----------------
 tracker:

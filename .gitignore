@@ -16,5 +16,13 @@ dataset/labels/*/*
 runs/
 training/runs/
 models/*.pt
+# fine-tuning data: recorded frames show real people - keep them out of git
+dataset/raw/
+dataset/bas/
+dataset/bas_reviewed/
+dataset/*.zip
+evaluation/results/*/_aligned_split/
+yolov8s-worldv2.pt
+backend/models/yolov8s-worldv2.pt
 *.engine
 *.onnx

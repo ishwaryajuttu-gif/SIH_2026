@@ -19,7 +19,7 @@ from app.config import SCHEMA, ConfigError, load_config, validate_config  # noqa
 from app.detector import Detection, SimpleTracker  # noqa: E402
 from app.events import EventLog  # noqa: E402
 from app.hands import Hand  # noqa: E402
-from app.interaction import InteractionAnalyzer, Proximity  # noqa: E402
+from app.interaction import InteractionAnalyzer, Proximity, reasoning_tracks  # noqa: E402
 from app.procedure import WorkflowTracker  # noqa: E402
 from app.safety import SafetyMonitor  # noqa: E402
 from app.scene import derive_scene  # noqa: E402
@@ -65,13 +65,15 @@ class Sim:
         self.act = ActivityRecognizer(cfg, self.ev)
         self.saf = SafetyMonitor(cfg, self.ev)
         self.wf = WorkflowTracker(cfg, self.ev)
+        self.surface = set(cfg["detector"]["surface_objects"])
         self.t = 1000.0
         self.tracks = []
 
     def run(self, frames):
         for dets, hands in frames:
             self.t += 1 / FPS
-            self.tracks = self.tracker.update(dets)
+            self.all_tracks = self.tracker.update(dets)
+            self.tracks = reasoning_tracks(self.all_tracks, self.surface)
             best = self.ana.per_object(self.ana.analyze(hands, self.tracks))
             for c in self.act.update(self.tracks, best, len(hands), DIAG, now=self.t):
                 self.wf.on_activity(c)
@@ -102,6 +104,10 @@ def tablet(x=300, y=150):
 
 def sharp(x=200, y=150):
     return Detection("scissors", "Sharp Tool Stand-in", 0.8, (x, y, x + 60, y + 80))
+
+
+def tray(x=40, y=120):
+    return Detection("tray", "Experimental Workstation Stand-in", 0.9, (x, y, x + 420, y + 220))
 
 
 def touch(objs, hand_xy, n):
@@ -418,6 +424,21 @@ def test_voice_phrases_and_cooldown(tmp_path):
     assert v.say("hello", now=100.0 + cfg["voice"]["cooldown_s"] + 0.1) is True
     v.enabled = False
     assert v.say("other", now=500.0) is False                       # muted
+
+
+def test_tray_is_tracked_but_not_an_interaction_target(tmp_path):
+    """The tray (fine-tuned class) sits under every object: touching the bottle must not also
+    start a tray interaction, and the tray must never raise movement/missing alerts."""
+    b = bottle()
+    on = (b.box[0] + 25, b.box[1] + 50)
+    sim = Sim(base_cfg(tmp_path)).run(
+        touch([tray(), b], FAR, 5) + touch([tray(), b], on, 15) + touch([tray(), b], FAR, 15))
+    tray_ids = {t.track_id for t in sim.all_tracks if t.cls_name == "tray"}
+    assert tray_ids and not tray_ids & set(sim.act.objects)      # tracked, but no activity state machine
+    assert sim.of("WORKFLOW_STEP_COMPLETED")                     # the bottle interaction still counts
+    sim.run(touch([b], FAR, 120))                                # tray hidden for 8 s: no "missing" alert
+    assert not any(e.subject == "Experimental Workstation Stand-in" for e in sim.ev.events)
+    assert reasoning_tracks(sim.all_tracks, set()) == sim.all_tracks   # [] disables the filter
 
 
 # ------------------------------------------------------------------ configuration

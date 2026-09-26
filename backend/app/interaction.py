@@ -19,6 +19,15 @@ from .hands import Hand
 HUMAN_LABELS = {"Person"}   # dashboard label of the COCO "person" class
 
 
+def reasoning_tracks(tracks: list[Track], surface_labels: set[str]) -> list[Track]:
+    """Tracks the reasoning layers (interaction, activity, safety, scene) work on.
+
+    Surface stand-ins such as the tray are detected and drawn, but a hand over the tray is not an
+    equipment interaction - everything else stands on it. Approaching the work area is still
+    covered by the workstation zone (safety.py)."""
+    return [t for t in tracks if t.label not in surface_labels] if surface_labels else list(tracks)
+
+
 class Proximity(IntEnum):
     FAR = 0
     NEAR = 1

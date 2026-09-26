@@ -43,7 +43,7 @@ SCHEMA: dict[str, dict[str, tuple]] = {
         "mode": (str,), "model": (str,), "model_path": (str,), "world_model": (str,), "custom_model": (str,),
         "conf": (NUM, 0.01, 0.99), "class_conf": (dict,), "imgsz": (int, 160, 1280),
         "detect_every": (int, 1, 10), "class_map": (dict,), "world_prompts": (dict,),
-        "restricted_objects": (list,),
+        "restricted_objects": (list,), "surface_objects": (list,),
     },
     "tracker": {
         "iou_match": (NUM, 0.01, 0.99), "center_match": (NUM, 0, 5), "max_missed": (int, 1, 300),
@@ -159,6 +159,9 @@ def validate_config(cfg: dict[str, Any]) -> list[str]:
     for obj in cfg["detector"]["restricted_objects"]:
         if obj not in labels:
             warnings.append(f"restricted object '{obj}' is not produced by any class_map/world_prompts entry")
+    for obj in cfg["detector"]["surface_objects"]:
+        if obj not in labels:
+            warnings.append(f"surface object '{obj}' is not produced by any class_map/world_prompts entry")
     for s in cfg["workflow"]["steps"]:
         if s["object"] not in labels:
             warnings.append(f"workflow step {s['id']} object '{s['object']}' is not a detector label")
