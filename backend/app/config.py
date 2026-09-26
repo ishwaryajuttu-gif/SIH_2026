@@ -40,7 +40,7 @@ SCHEMA: dict[str, dict[str, tuple]] = {
         "camera_open_timeout_s": (NUM, 1, 60), "camera_stall_s": (NUM, 0.5, 60),
     },
     "detector": {
-        "mode": (str,), "model": (str,), "model_path": (str,), "world_model": (str,), "custom_model": (str,),
+        "mode": (str,), "model": (str,), "model_path": (str,), "world_model": (str,),
         "conf": (NUM, 0.01, 0.99), "class_conf": (dict,), "imgsz": (int, 160, 1280),
         "detect_every": (int, 1, 10), "class_map": (dict,), "world_prompts": (dict,),
         "restricted_objects": (list,), "surface_objects": (list,),
@@ -162,7 +162,14 @@ def validate_config(cfg: dict[str, Any]) -> list[str]:
     for obj in cfg["detector"]["surface_objects"]:
         if obj not in labels:
             warnings.append(f"surface object '{obj}' is not produced by any class_map/world_prompts entry")
+    surface = set(cfg["detector"]["surface_objects"])
+    both = surface & set(cfg["detector"]["restricted_objects"])
+    if both:
+        raise ConfigError(f"{sorted(both)} is both a surface and a restricted object - surface objects never alert")
     for s in cfg["workflow"]["steps"]:
+        if s["object"] in surface:
+            raise ConfigError(f"workflow step {s['id']} uses surface object '{s['object']}', which is never "
+                              f"interacted with - the step could never complete")
         if s["object"] not in labels:
             warnings.append(f"workflow step {s['id']} object '{s['object']}' is not a detector label")
     return warnings

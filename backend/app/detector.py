@@ -156,7 +156,7 @@ class ObjectDetector:
         self.class_map: dict[str, str] = dict(dcfg.get("class_map", {}))
 
         # Configurable model paths
-        custom_target = dcfg.get("model_path") or dcfg.get("custom_model", "models/best.pt")
+        custom_target = dcfg.get("model_path") or "models/best.pt"
         base_model_path = resolve_path(dcfg.get("model", "models/yolo11n.pt"))
         world_model_path = resolve_path(dcfg.get("world_model", "models/yolov8s-worldv2.pt"))
 

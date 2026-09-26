@@ -4,7 +4,7 @@
     python tools/export_edge.py --format openvino          # fast on Intel CPUs / iGPUs
     python tools/export_edge.py --format engine --half     # TensorRT FP16 - run this ON the Jetson
 
-After export, point detector.model (or custom_model) in backend/config.yaml at the exported file.
+After export, point detector.model (or model_path) in backend/config.yaml at the exported file.
 """
 import argparse
 from pathlib import Path

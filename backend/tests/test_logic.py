@@ -440,6 +440,14 @@ def test_tray_is_tracked_but_not_an_interaction_target(tmp_path):
     assert not any(e.subject == "Experimental Workstation Stand-in" for e in sim.ev.events)
     assert reasoning_tracks(sim.all_tracks, set()) == sim.all_tracks   # [] disables the filter
 
+    # Control: without the filter the same frames DO make the tray an interaction target, so the checks
+    # above pass because of surface_objects and not because the tray was never touched.
+    cfg = base_cfg(tmp_path)
+    cfg["detector"]["surface_objects"] = []
+    ctrl = Sim(cfg).run(touch([tray(), b], FAR, 5) + touch([tray(), b], on, 15) + touch([tray(), b], FAR, 15))
+    ctrl_tray = {t.track_id for t in ctrl.all_tracks if t.cls_name == "tray"}
+    assert ctrl_tray & set(ctrl.act.objects)
+
 
 # ------------------------------------------------------------------ configuration
 def test_shipped_config_is_valid_without_warnings():
@@ -468,6 +476,22 @@ def test_config_rejects_bad_zone():
     bad = copy.deepcopy(cfg)
     bad["safety"]["zones"] = [{"name": "z", "points": [[0, 0], [2, 0], [1, 1]]}]
     with pytest.raises(ConfigError):
+        validate_config(bad)
+
+
+def test_config_rejects_surface_object_that_is_restricted():
+    cfg = load_config(use_env=False, use_zone_file=False)
+    bad = copy.deepcopy(cfg)
+    bad["detector"]["surface_objects"] = ["Sharp Tool Stand-in"]    # also in restricted_objects
+    with pytest.raises(ConfigError, match="surface and a restricted"):
+        validate_config(bad)
+
+
+def test_config_rejects_workflow_step_on_surface_object():
+    cfg = load_config(use_env=False, use_zone_file=False)
+    bad = copy.deepcopy(cfg)
+    bad["workflow"]["steps"][0]["object"] = "Experimental Workstation Stand-in"
+    with pytest.raises(ConfigError, match="could never complete"):
         validate_config(bad)
 
 
@@ -532,7 +556,7 @@ def test_custom_detector_fallback_when_best_pt_missing():
     cfg = load_config(use_env=False, use_zone_file=False)
     cfg["detector"]["mode"] = "custom"
     cfg["detector"]["model_path"] = "models/non_existent_weights.pt"
-    
+
     from app.detector import ObjectDetector
     det = ObjectDetector(cfg)
     assert det.mode == "coco"

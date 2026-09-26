@@ -10,7 +10,7 @@ It does not make the system mission-ready.
 | Step | What | Time |
 |---|---|---|
 | 0 | Prepare (runs in the background during step 1) | – |
-| 1 | Record 5 sessions, 500–700 frames | 30 min |
+| 1 | Record 6 sessions, 550–800 frames | 35 min |
 | 2 | Auto-label with YOLO-World, split by session | 30 min |
 | 3 | Review the labels by hand in CVAT | 2 h |
 | 4 | Train on a free GPU (Colab) | 45 min |
@@ -89,11 +89,14 @@ python tools\record_dataset.py --name bench1 --auto 0.5
 | `bench3` | you | lamp on | about 10 cm higher and turned about 15° | new positions, tray rotated; lots of hand-covering |
 | `bench4` | **another person** | lamp on or window light | about 10 cm lower / closer | demo layout |
 | `bench5` | you | demo light | **back to the exact demo position** | an arrangement not used before; keep 1 distractor |
+| `bench6` | you | demo light | exact demo position | another new arrangement; keep 1 distractor. Only about 40 s (~80 frames) |
 
-`bench5` becomes the **validation** session. It is recorded like the live demo, so its score tells you how the
-demo will behave. Make sure **all six classes are in bench5**, including the scissors and the tray.
+`bench5` becomes the **validation** session: training uses it to pick the best epoch. `bench6` becomes the **test**
+session: it is used for nothing except the final score, so that score is not tuned on. Both are recorded like the
+live demo, so their scores tell you how the demo will behave. Make sure **all six classes are in bench5 and bench6**,
+including the scissors and the tray.
 
-Check the counts (aim for 500–700 in total):
+Check the counts (aim for 550–800 in total):
 
 ```
 python -c "from pathlib import Path; [print(d.name, len(list(d.glob('*.jpg')))) for d in sorted(Path('dataset/raw').iterdir())]"
@@ -106,22 +109,23 @@ Running the same `--name` again **adds** frames to that session.
 ## 2. Auto-label (30 min)
 
 ```
-python tools\auto_label.py --src dataset/raw --classes person bottle cup "cell phone" scissors tray --val-session bench5
+python tools\auto_label.py --src dataset/raw --classes person bottle cup "cell phone" scissors tray --val-session bench5 --test-session bench6
 ```
 
 What it does:
 
 - Pre-labels every frame with YOLO-World, using the six class names as text prompts. It runs in a few minutes on a CPU.
-- **Splits by session folder**: all of `bench5` goes to `val`, and `bench1`–`bench4` go to `train`. No frame of a
-  session ever appears in both, so neighbouring near-identical frames can't leak into validation.
+- **Splits by session folder**: all of `bench5` goes to `val`, all of `bench6` to `test`, and `bench1`–`bench4` to
+  `train`. No frame of a session ever appears in two splits, so neighbouring near-identical frames can't leak.
 - Writes `dataset/bas/` (images, labels, `data.yaml` with the class order above, and `split.json`, which records the split),
   plus **`dataset/bas_upload.zip`** for CVAT.
-- Prints the number of pre-label boxes per class for train and val.
+- Prints the number of pre-label boxes per class for train, val and test.
 
 Read the warnings:
 
-- **"no pre-label boxes for [...] in the val session"**: if the object is really in bench5, you will add the boxes in step 3.
-  If it is not, record a few more seconds with `--name bench5` and re-run with `--overwrite`.
+- **"no pre-label boxes for [...] in the val (or test) session"**: if the object is really in bench5/bench6, you will
+  add the boxes in step 3. If it is not, record a few more seconds with `--name bench5` (or `bench6`) and re-run with
+  `--overwrite`.
 - A class with very few boxes overall (often `tray` or `scissors`) usually means YOLO-World misses it. That's fine;
   you draw those boxes in step 3.
 
@@ -131,8 +135,8 @@ Re-running needs `--overwrite`. The old images are removed, so nothing stale sta
 
 ## 3. Review the labels by hand (2 h, the most important step)
 
-Pre-labels are **never** trained on without review. The val labels decide the number you will report,
-so review **val first and most carefully**.
+Pre-labels are **never** trained on without review. The test labels decide the number you will report and the val
+labels decide which epoch is kept, so review **test and val first and most carefully**.
 
 ### 3a. Set up CVAT (10 min)
 
@@ -143,9 +147,9 @@ We use **CVAT Online (app.cvat.ai), free plan**: private, 1 project, 3 tasks, 1 
 2. Add the labels **in exactly this order**: `person`, `bottle`, `cup`, `cell phone`, `scissors`, `tray`
    (type Rectangle or Any). Then **Submit & Open**.
 3. On the project page: **Actions → Import dataset**. Format: **Ultralytics YOLO Detection 1.0**. File:
-   `dataset\bas_upload.zip`. CVAT uploads the images and pre-labels and creates **two tasks, `train` and `val`**.
-   Progress shows on the **Requests** page.
-4. Open task **val** → click its job. Review it, then do the same for **train**.
+   `dataset\bas_upload.zip`. CVAT uploads the images and pre-labels and creates **three tasks, `train`, `val` and
+   `test`** (exactly the free plan's limit). Progress shows on the **Requests** page.
+4. Open task **test** → click its job. Review it, then do the same for **val**, then **train**.
 
 ### 3b. Keys that save time
 
@@ -160,8 +164,8 @@ We use **CVAT Online (app.cvat.ai), free plan**: private, 1 project, 3 tasks, 1 
 | **Ctrl+B** | propagate: copy the selected box to the next frames (good for a tray that doesn't move) |
 | **Ctrl+Z** / **Ctrl+S** | undo / **save (save often)** |
 
-Pace: about 600 frames in 105 minutes is about 10 s per frame. Most frames need one look and **F**.
-Suggested split: **val 35 min, train 70 min**, then 10 min for export and import.
+Pace: about 680 frames in 110 minutes is about 10 s per frame. Most frames need one look and **F**.
+Suggested split: **test 15 min, val 30 min, train 65 min**, then 10 min for export and import.
 
 ### 3c. Checklist: what to look for on every frame
 
@@ -208,8 +212,8 @@ and move on; don't delete it.
    ```
    python tools\import_reviewed.py --export "%USERPROFILE%\Downloads\<the exported file>.zip"
    ```
-3. Read the summary: frames kept or deleted per session, and boxes per class for train and val.
-   **Every class needs boxes in both train and val.** It also writes **`dataset/bas_reviewed_colab.zip`** for step 4.
+3. Read the summary: frames kept or deleted per session, and boxes per class for train, val and test.
+   **Every class needs boxes in train, val and test.** It also writes **`dataset/bas_reviewed_colab.zip`** for step 4.
 
 > **Roboflow instead of CVAT?** Only if you accept that the free plan makes the dataset public. If you do, upload the
 > `dataset/bas` folder, mark frames with no objects as **Null**, and generate a version with **no augmentation** and
@@ -251,20 +255,20 @@ and move on; don't delete it.
 
 ### 5a. Measure (10 min)
 
-Score the **pretrained COCO model** and the **fine-tuned model** on the **same held-out session** (bench5), at
+Score the **pretrained COCO model** and the **fine-tuned model** on the **same held-out test session** (bench6), at
 `--imgsz 480`, the size the backend uses (`detector.imgsz`). COCO has no tray, so the fair comparison uses the five
 shared classes. A third run adds the tray.
 
 ```
-python evaluation\evaluate_detector.py --data dataset/bas_reviewed/data.yaml --split val --imgsz 480 ^
+python evaluation\evaluate_detector.py --data dataset/bas_reviewed/data.yaml --split test --imgsz 480 ^
   --model backend/models/yolo11n.pt --classes person bottle cup "cell phone" scissors ^
   --output-dir evaluation/results/coco_baseline
 
-python evaluation\evaluate_detector.py --data dataset/bas_reviewed/data.yaml --split val --imgsz 480 ^
+python evaluation\evaluate_detector.py --data dataset/bas_reviewed/data.yaml --split test --imgsz 480 ^
   --model backend/models/bas_custom.pt --classes person bottle cup "cell phone" scissors ^
   --output-dir evaluation/results/finetuned_5cls
 
-python evaluation\evaluate_detector.py --data dataset/bas_reviewed/data.yaml --split val --imgsz 480 ^
+python evaluation\evaluate_detector.py --data dataset/bas_reviewed/data.yaml --split test --imgsz 480 ^
   --model backend/models/bas_custom.pt --output-dir evaluation/results/finetuned_all
 
 python evaluation\compare_results.py ^
@@ -291,9 +295,10 @@ detection in the docs. If 1 or 2 fails, keep the pretrained model and report the
 
 ### 5c. Switch and check live (25 min)
 
-In `backend\config.yaml`, under `detector:`, change one line (`mode` is already `custom`):
+In `backend\config.yaml`, under `detector:`, change two lines (the shipped config runs the pretrained model, `mode: coco`):
 
 ```yaml
+  mode: custom
   model_path: models/bas_custom.pt
 ```
 
@@ -310,6 +315,10 @@ Then:
    - Bottle → INTERACTING → COMPLETED, cup move, phone, restricted zone WARNING → CRITICAL, and scissors CRITICAL all behave as before.
    - A bare hand with no phone doesn't show *Data Tablet Stand-in*. If it does, raise `class_conf: cell phone`.
      If an object flickers, lower `detector.conf` a little (not below 0.25).
+   - `class_conf: cell phone: 0.55` was tuned for the pretrained model, which mistakes hands for phones. The
+     fine-tuned model has seen hands without phones, so if the real phone flickers or is missed, try 0.45, then
+     0.35 (`detector.conf`), while re-checking the bare-hand case above. `class_conf: remote` does nothing for the
+     fine-tuned model (it has no remote class) and can stay for rollback.
    - Switch the lamp off once and check again.
 4. `run_tests.bat`. The unit tests must pass. The integration and smoke tests run the **sample video**
    (`hand_demo.mp4`, not your table) through the new model. If *person detected* now fails there, the fine-tuned model
@@ -330,7 +339,7 @@ If you did **not** switch, only add a line to README §11 saying what you tried 
 | `README.md` | §5 table, "Pretrained YOLO11n (COCO)…" | "YOLO11n (COCO-pretrained) **fine-tuned on our own demo-table recordings** (person, bottle, cup, cell phone, scissors, tray)" |
 | `README.md` | §6, YOLO11n row, "Trained by us?" | "Fine-tuned by us: transfer learning from COCO on {N} frames of our own demo table ([results](docs/finetune-results.md)). Not trained on BAS data." |
 | `README.md` | §9, Tray row | Detected class `tray` (fine-tuned model). Shown as a detection only; "approaching" still uses the workstation zone. |
-| `README.md` | §11, "No accuracy figures" | "**Detection measured only on our own table.** On one held-out recording session ({n} frames), mAP50 {x} (fine-tuned) vs {y} (pretrained COCO) on the same five classes; tray mAP50 {t}. Same room, table and objects as training; best epoch chosen on that session; frame-level detection only. Activity-recognition accuracy is still not measured." Add the sample-video limitation from 5c if it applies. |
+| `README.md` | §11, "No accuracy figures" | "**Detection measured only on our own table.** On one held-out recording session ({n} frames), mAP50 {x} (fine-tuned) vs {y} (pretrained COCO) on the same five classes; tray mAP50 {t}. Same room, table and objects as training; that session was not used for training or for picking the epoch; frame-level detection only. Activity-recognition accuracy is still not measured." Add the sample-video limitation from 5c if it applies. |
 | `README.md` | §13, Privacy line | Keep it, and add: "For the detector fine-tune we deliberately recorded {N} webcam frames of our table, with the consent of the people shown. They were labelled in a private CVAT project, trained on Google Colab, and are not in this repository." |
 | `docs/dataset-strategy.md` | "WHAT EXISTS NOW" | YOLO11n bullet: fine-tuned on our own mock-bench recordings (interim data, see *Optional interim data*). Evaluation bullet: the measured number above, with the same caveats. The "No ISRO/BAS data" bullet stays true. |
 | `docs/judge-qa.md` | Q1 ("we have not trained a custom model") and "No measured accuracy figures yet" | Say what we fine-tuned, on what, and the one number with its caveats. |
@@ -344,7 +353,7 @@ Don't claim what the numbers don't show: not BAS hardware, not other rooms or ca
 
 ## What was changed in the code for this
 
-- `tools/auto_label.py`: train/val split **by session folder** (`--val-session`); class order kept exactly; `data.yaml`
+- `tools/auto_label.py`: train/val/test split **by session folder** (`--val-session`, `--test-session`); class order kept exactly; `data.yaml`
   without an absolute path (works in Colab) and without `nc` (CVAT rejects it); `split.json`; CVAT upload zip;
   cross-class duplicate suppression (`--agnostic-nms`); refuses to overwrite a dataset unless `--overwrite` is given.
 - `tools/import_reviewed.py` (new): brings reviewed CVAT/Roboflow exports back safely (see 3d) and writes the Colab zip.

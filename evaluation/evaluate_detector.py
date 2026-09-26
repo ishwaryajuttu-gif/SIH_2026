@@ -39,7 +39,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("bas.evaluation")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_DATA = PROJECT_ROOT / "dataset" / "data.yaml"
+REVIEWED_DATA = PROJECT_ROOT / "dataset" / "bas_reviewed" / "data.yaml"   # tools/import_reviewed.py
+DEFAULT_DATA = REVIEWED_DATA if REVIEWED_DATA.exists() else PROJECT_ROOT / "dataset" / "data.yaml"
 DEFAULT_MODEL = PROJECT_ROOT / "models" / "best.pt"
 BACKEND_MODEL = PROJECT_ROOT / "backend" / "models" / "best.pt"
 BASE_FALLBACK_MODEL = PROJECT_ROOT / "backend" / "models" / "yolo11n.pt"
@@ -64,9 +65,9 @@ def parse_args():
     parser.add_argument(
         "--split",
         type=str,
-        default="test",
+        default=None,
         choices=["test", "val", "train"],
-        help="Dataset split to evaluate on ('test' or 'val', default: 'test').",
+        help="Dataset split to evaluate on (default: 'test' if data.yaml defines it, else 'val').",
     )
     parser.add_argument(
         "--imgsz",
@@ -231,7 +232,7 @@ def main() -> int:
             "  1. %s\n"
             "  2. %s\n"
             "  3. %s\n"
-            "Please train a model first using: python training/train_yolo.py",
+            "Please train a model first using: python tools/train.py (docs/finetune-runbook.md, step 4)",
             DEFAULT_MODEL,
             BACKEND_MODEL,
             BASE_FALLBACK_MODEL,
@@ -239,6 +240,12 @@ def main() -> int:
         return 1
 
     # 2. Check Dataset Split (resolved from data.yaml)
+    if args.split is None:
+        import yaml
+
+        defined = yaml.safe_load(data_yaml.read_text(encoding="utf-8")) if data_yaml.exists() else None
+        args.split = "test" if isinstance(defined, dict) and defined.get("test") else "val"
+        log.info("No --split given: using '%s'", args.split)
     try:
         ds_names, split_images, split_msg = load_split(data_yaml, args.split)
     except ValueError as e:

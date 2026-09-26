@@ -33,14 +33,13 @@ video:
 detector:
   # coco   -> pretrained YOLO11n (COCO classes). No BAS-specific training.
   # world  -> YOLO-World open-vocabulary model (text prompts), optional
-  # custom -> fine-tuned weights on BAS stand-in classes (models/best.pt)
+  # custom -> fine-tuned weights from model_path (docs/finetune-runbook.md step 5 switches to it)
   # NOTE: When set to 'custom', if model_path does not exist yet,
   # the system safely falls back to the base pretrained model with clear UI/log notification.
-  mode: custom
+  mode: coco
   model: models/yolo11n.pt
-  model_path: models/best.pt
+  model_path: models/best.pt   # weights used when mode == custom
   world_model: models/yolov8s-worldv2.pt
-  custom_model: models/best.pt
   conf: 0.35
   class_conf:            # stricter thresholds for classes that are easily confused with hands
     cell phone: 0.55

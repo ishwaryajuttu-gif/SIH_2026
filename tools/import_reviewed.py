@@ -7,12 +7,12 @@ Annotation tools quietly change things on the way out:
 This script undoes all of that, so the dataset you train on is exactly what you reviewed:
   * class ids are remapped BY NAME to the canonical order (from dataset/bas/split.json)
   * each label file is matched back to your ORIGINAL full-resolution frame in dataset/raw
-  * the train/val split is re-made BY SESSION FOLDER (same val session as tools/auto_label.py)
+  * the train/val(/test) split is re-made BY SESSION FOLDER (same sessions as tools/auto_label.py)
   * frames you deleted in the tool are left out; frames with no boxes become negative examples
 
     python tools/import_reviewed.py --export "%USERPROFILE%\\Downloads\\bas-review.zip"
 
-Output (default dataset/bas_reviewed): images/{train,val} labels/{train,val} data.yaml split.json
+Output (default dataset/bas_reviewed): images/{train,val[,test]} labels/{train,val[,test]} data.yaml split.json
 plus dataset/bas_reviewed_colab.zip = this dataset + tools/train.py + the base weights, ready to upload
 to tools/colab_train.ipynb (paths inside the zip match the project layout).
 """
@@ -127,6 +127,7 @@ def main():
     ap.add_argument("--prelabels", default="dataset/bas", help="auto_label.py output (split.json lives here)")
     ap.add_argument("--out", default="dataset/bas_reviewed")
     ap.add_argument("--val-session", nargs="+", default=None, help="override the val session(s) from split.json")
+    ap.add_argument("--test-session", nargs="+", default=None, help="override the test session(s) from split.json")
     ap.add_argument("--overwrite", action="store_true")
     ap.add_argument("--colab-zip", action=argparse.BooleanOptionalAction, default=True,
                     help="also write <out>_colab.zip for GPU training in Colab/Kaggle")
@@ -139,6 +140,14 @@ def main():
     meta = json.loads(split_file.read_text(encoding="utf-8"))
     classes: list[str] = meta["classes"]
     val_sessions = set(args.val_session or meta["val_sessions"])
+    test_sessions = set(args.test_session if args.test_session is not None else meta.get("test_sessions", []))
+    if val_sessions & test_sessions:
+        raise SystemExit(f"{sorted(val_sessions & test_sessions)} is in both val and test.")
+
+    def split_of(session: str) -> str:
+        return "test" if session in test_sessions else "val" if session in val_sessions else "train"
+
+    splits = ["train", "val"] + (["test"] if test_sessions else [])
     canon = {norm(c): i for i, c in enumerate(classes)}
 
     # ---- original frames: stem -> (path, session)
@@ -150,9 +159,9 @@ def main():
             frames[p.stem] = (p, p.relative_to(raw).parts[0])
     if not frames:
         raise SystemExit(f"No frames found in {raw}/<session>/")
-    unknown_val = val_sessions - {s for _, s in frames.values()}
+    unknown_val = (val_sessions | test_sessions) - {s for _, s in frames.values()}
     if unknown_val:
-        raise SystemExit(f"Val session(s) {sorted(unknown_val)} not found in {raw}")
+        raise SystemExit(f"Val/test session(s) {sorted(unknown_val)} not found in {raw}")
 
     # ---- open the export
     src = Path(args.export).expanduser()
@@ -234,12 +243,12 @@ def main():
                 raise SystemExit(f"{out} already exists. Re-run with --overwrite to replace it.")
             for sub in ("images", "labels"):
                 shutil.rmtree(out / sub, ignore_errors=True)
-        stats = {"train": Counter(), "val": Counter()}
+        stats = {s: Counter() for s in splits}
         n_img, n_neg = Counter(), Counter()
         kept_per_session, fixed = Counter(), Counter()
         for stem in sorted(present):
             img, session = frames[stem]
-            split = "val" if session in val_sessions else "train"
+            split = split_of(session)
             (out / "images" / split).mkdir(parents=True, exist_ok=True)
             (out / "labels" / split).mkdir(parents=True, exist_ok=True)
             shutil.copy2(img, out / "images" / split / img.name)
@@ -266,42 +275,50 @@ def main():
 
     (out / "data.yaml").write_text(
         "# Written by tools/import_reviewed.py - HUMAN-REVIEWED labels, split by session\n"
-        + yaml.safe_dump({"train": "images/train", "val": "images/val", "names": dict(enumerate(classes))},
+        + yaml.safe_dump({**{s: f"images/{s}" for s in splits}, "names": dict(enumerate(classes))},
                          sort_keys=False), encoding="utf-8")
     all_sessions = Counter(s for _, s in frames.values())
     (out / "split.json").write_text(json.dumps({
         "split_by": "session", "reviewed": True, "classes": classes,
         "val_sessions": sorted(val_sessions),
-        "train_sessions": sorted(s for s in all_sessions if s not in val_sessions),
+        "test_sessions": sorted(test_sessions),
+        "train_sessions": sorted(s for s in all_sessions if split_of(s) == "train"),
         "frames_per_session": {s: kept_per_session[s] for s in sorted(all_sessions)},
         "source_export": src.name,
     }, indent=2), encoding="utf-8")
 
+    def shown(p: Path) -> str:
+        return p.relative_to(ROOT).as_posix() if p.is_relative_to(ROOT) else str(p)
+
     print(f"\nReviewed dataset written to {out}")
     print(f"  {'session':10s} {'split':6s} {'kept':>5s} {'deleted':>8s}")
     for s in sorted(all_sessions):
-        print(f"  {s:10s} {'val' if s in val_sessions else 'train':6s} {kept_per_session[s]:5d} "
-              f"{all_sessions[s] - kept_per_session[s]:8d}")
-    print(f"\n  images: train {n_img['train']} ({n_neg['train']} with no objects), "
-          f"val {n_img['val']} ({n_neg['val']} with no objects)")
-    print(f"  {'class':14s} {'train':>6s} {'val':>6s}   (reviewed boxes)")
+        print(f"  {s:10s} {split_of(s):6s} {kept_per_session[s]:5d} {all_sessions[s] - kept_per_session[s]:8d}")
+    print("\n  images: " + ", ".join(f"{s} {n_img[s]} ({n_neg[s]} with no objects)" for s in splits))
+    print(f"  {'class':14s} " + " ".join(f"{s:>6s}" for s in splits) + "   (reviewed boxes)")
     for c in classes:
-        print(f"  {c:14s} {stats['train'][c]:6d} {stats['val'][c]:6d}")
+        print(f"  {c:14s} " + " ".join(f"{stats[s][c]:6d}" for s in splits))
     for k, v in fixed.items():
         print(f"  note: {v} {k}")
-    for split in ("train", "val"):
+    for split in splits:
         empty = [c for c in classes if stats[split][c] == 0]
         if empty:
             print(f"\nWARNING: no {split} boxes for {empty}. The model cannot learn/be measured on these classes.")
     if args.colab_zip:
         zpath = out.parent / f"{out.name}_colab.zip"
         extra = [ROOT / "tools" / "train.py", ROOT / "backend" / "models" / "yolo11n.pt"]
+        for e in extra:
+            if not e.exists():
+                print(f"WARNING: {shown(e)} is missing, so it is not in the Colab zip - the notebook needs it.")
         with zipfile.ZipFile(zpath, "w", zipfile.ZIP_STORED) as z:
             for fpath in sorted(out.rglob("*")) + [e for e in extra if e.exists()]:
                 if fpath.is_file():
-                    z.write(fpath, fpath.relative_to(ROOT).as_posix())
+                    # the notebook expects the project layout; a dataset outside the project goes under dataset/
+                    arc = fpath.relative_to(ROOT) if fpath.is_relative_to(ROOT) else \
+                        Path("dataset", out.name, fpath.relative_to(out))
+                    z.write(fpath, arc.as_posix())
         print(f"\nColab upload: {zpath}  ({zpath.stat().st_size / 1e6:.0f} MB)")
-    print(f"NEXT: train on {out.relative_to(ROOT).as_posix()}/data.yaml (docs/finetune-runbook.md, step 4)")
+    print(f"NEXT: train on {shown(out)}/data.yaml (docs/finetune-runbook.md, step 4)")
 
 
 if __name__ == "__main__":

@@ -119,7 +119,7 @@ Upon training completion, the best checkpoint based on validation loss and mAP i
 2. Automatically copied to **`models/best.pt`** (project-level model storage).
 3. Automatically copied to **`backend/models/best.pt`** (backend runtime access).
 
-The backend is configured in `backend/config.yaml` to load `models/best.pt`:
+To load `models/best.pt`, set in `backend/config.yaml` (the shipped config uses `mode: coco`):
 ```yaml
 detector:
   mode: custom

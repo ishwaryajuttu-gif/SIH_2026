@@ -65,23 +65,31 @@ def main() -> int:
     if meta:
         fps = meta.get("frames_per_session", {})
         val = meta.get("val_sessions", [])
-        n_train = sum(v for k, v in fps.items() if k not in val)
-        n_val = sum(v for k, v in fps.items() if k in val)
+        test = meta.get("test_sessions", [])
+        n = {s: sum(v for k, v in fps.items() if (k in test if s == "test" else k in val if s == "val"
+                                                   else k not in val and k not in test))
+             for s in ("train", "val", "test")}
+        held_out = f"val = {', '.join(val)}" + (f", test = {', '.join(test)}" if test else "")
+        if first["split"] == "test":
+            bias = ("The scored test session was used for nothing else: not for training and not for picking the "
+                    "training epoch (that was the val session).")
+        else:
+            bias = ("The scored session was also used to pick the best training epoch, so it is a slightly "
+                    "optimistic estimate.")
         lines = [
             "## Detector fine-tune on our demo table - measured results",
             "",
             f"- Data: our own webcam recordings of the demo table, {len(fps)} sessions, "
-            f"{n_train} train / {n_val} val frames "
+            f"{n['train']} train / {n['val']} val" + (f" / {n['test']} test" if test else "") + " frames "
             f"({'labels reviewed by hand' if meta.get('reviewed') else 'pre-labels NOT reviewed by a human'}).",
-            f"- Split by session: val = {', '.join(val)} (a whole separate recording), "
+            f"- Split by session: {held_out} (each a whole separate recording), "
             f"train = {', '.join(meta.get('train_sessions', []))}.",
             f"- Classes: {', '.join(meta.get('classes', []))}.",
             "",
         ] + lines + [
             "",
             "What these numbers do NOT show: accuracy on real BAS hardware, other rooms, tables or cameras, or "
-            "activity-recognition accuracy. The val session was also used to pick the best training epoch, so "
-            "it is a slightly optimistic estimate. Train and val show the same table, room and objects.",
+            f"activity-recognition accuracy. {bias} All sessions show the same table, room and objects.",
         ]
     text = "\n".join(lines) + "\n"
     print(text)
