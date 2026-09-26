@@ -19,7 +19,7 @@ def main():
     ap.add_argument("--data", default="dataset/bas/data.yaml")
     ap.add_argument("--base", default="yolo11n.pt", help="pretrained starting point (COCO)")
     ap.add_argument("--epochs", type=int, default=60)
-    ap.add_argument("--imgsz", type=int, default=640)
+    ap.add_argument("--imgsz", type=int, default=480, help="train at the size you run at (backend detector.imgsz)")
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--device", default=None, help="'cpu', '0' for GPU ...")
     args = ap.parse_args()

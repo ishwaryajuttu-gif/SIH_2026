@@ -29,7 +29,14 @@ def main() -> int:
         p = p if p.is_absolute() or p.exists() else ROOT / p
         runs.append((label.strip(), json.loads((p / "evaluation_metrics.json").read_text(encoding="utf-8"))))
 
+    # Side by side only means something when every run scored the same images the same way.
+    same = ("dataset_config", "split", "image_size", "images")
     first = runs[0][1]
+    diffs = [f"  {k}: " + ", ".join(f"{label}={r.get(k)!r}" for label, r in runs)
+             for k in same if any(r.get(k) != first.get(k) for _, r in runs)]
+    if diffs:
+        raise SystemExit("Runs are not comparable - they differ in:\n" + "\n".join(diffs) +
+                         "\nRe-run evaluate_detector.py with the same --data, --split and --imgsz for every model.")
     split_json = Path(first["dataset_config"]).parent / "split.json"
     meta = json.loads(split_json.read_text(encoding="utf-8")) if split_json.exists() else {}
     classes = []

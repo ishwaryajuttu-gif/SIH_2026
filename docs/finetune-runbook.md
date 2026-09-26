@@ -225,7 +225,9 @@ and move on; don't delete it.
 3. In cell 2, set `ULTRALYTICS_VERSION` to the version from step 0. The weights then load in your backend without surprises.
 4. **Runtime → Run all.** When cell 3 shows *Choose Files*, pick `dataset\bas_reviewed_colab.zip` (about 100 MB,
    so it takes a few minutes).
-5. Training runs `tools/train.py` for 60 epochs, with early stopping (about 10–20 min on a T4). In the log, the
+5. Training runs `tools/train.py` for 60 epochs at `--imgsz 480`, with early stopping (about 10–20 min on a T4).
+   480 is the size the backend runs at (`detector.imgsz`) and the size step 5 evaluates at. If you change one, change all
+   three, or the before/after comparison also measures the size change. In the log, the
    `all` row's **mAP50** should rise and then level off.
 6. The last cell downloads **`bas_custom_results.zip`**. Unpack it into the project folder:
    ```
