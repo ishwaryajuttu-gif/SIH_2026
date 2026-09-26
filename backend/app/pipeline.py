@@ -241,12 +241,15 @@ class Pipeline:
         self.last_error = ""
         self.cameras: list[dict] = []
 
-        self._lock = threading.RLock()     # guards all state shared with API threads
+        # Threading: the pipeline thread mutates tracker/activity/safety/workflow under _lock (held for a whole
+        # frame, including YOLO). API threads never read those objects directly: they read _snapshot, a copy the
+        # pipeline publishes under the short-lived _snap_lock. Lock order is always _lock -> _snap_lock.
+        self._lock = threading.RLock()
         self._jpeg: bytes | None = None
         self._jpeg_cond = threading.Condition()
         self._last_viewer = 0.0
-        self._snapshot: dict = {}
         self._snap_lock = threading.Lock()
+        self._snapshot: dict = self._idle_snapshot()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._loop, name="pipeline", daemon=True)
 
@@ -302,10 +305,36 @@ class Pipeline:
     def set_zones(self, zones: list[dict]):
         with self._lock:
             self.safety.set_zones(zones)
+            self._publish(zones=self.safety.zone_state())
 
-    def reset_workflow(self):
+    def reset_workflow(self) -> dict:
         with self._lock:
             self.workflow.reset()
+            view = self.workflow.as_dict()
+            self._publish(workflow=view)
+        return view
+
+    def workflow_state(self) -> dict:
+        """Workflow as last published by the pipeline thread (safe to call from API threads)."""
+        with self._snap_lock:
+            return self._snapshot["workflow"]
+
+    def zones_config(self) -> list[dict]:
+        """Zone definitions (no live state) as last published (safe to call from API threads)."""
+        with self._snap_lock:
+            zones = self._snapshot["zones"]
+        return [{k: z[k] for k in ("id", "name", "type", "enabled", "points")} for z in zones]
+
+    def _publish(self, **parts):
+        """Replace parts of the published snapshot. Call with _lock held (or before the thread starts)."""
+        with self._snap_lock:
+            self._snapshot = {**self._snapshot, **parts}
+
+    def _idle_snapshot(self) -> dict:
+        """What the dashboard shows before the first frame is processed."""
+        return {"activity": derive_scene(self.activity, self.safety, []), "objects": [], "hands": [],
+                "interactions": [], "zones": self.safety.zone_state(), "human_present": False,
+                "workflow": self.workflow.as_dict()}
 
     # ------------------------------------------------------------------ main loop
     def _loop(self):
@@ -401,6 +430,7 @@ class Pipeline:
         self.last_process_ts = time.time()
 
         snap = self._build_snapshot(tracks, hands, best, zones, scene, w, h)
+        snap["workflow"] = self.workflow.as_dict()
         with self._snap_lock:
             self._snapshot = snap
         return tracks
@@ -469,7 +499,9 @@ class Pipeline:
             mp = comp("error", self.hands.error)
         else:
             mp = comp("active" if now - self.last_hands_ts < 2.0 else "ready", self.hands.backend)
-        n_zones = sum(1 for z in self.safety.zones if z.enabled and z.type == "restricted")
+        with self._snap_lock:
+            zones = self._snapshot["zones"]
+        n_zones = sum(1 for z in zones if z["enabled"] and z["type"] == "restricted")
         if self.voice.state == "error":
             voice = comp("error", self.voice.error)
         elif not self.voice.enabled:
@@ -520,12 +552,8 @@ class Pipeline:
 
     def snapshot(self) -> dict:
         with self._snap_lock:
-            snap = dict(self._snapshot)
-        if "activity" not in snap:
-            snap.update(activity=derive_scene(self.activity, self.safety, []), objects=[], hands=[],
-                        interactions=[], zones=self.safety.zone_state(), human_present=False)
+            snap = dict(self._snapshot)     # published copy - never read activity/safety/workflow directly here
         snap["status"] = self.status()
-        snap["workflow"] = self.workflow.as_dict()
         snap["alerts"] = [
             {"id": e.id, "time": e.time, "ts": e.ts, "type": e.type, "severity": e.severity, "message": e.message,
              "subject": e.subject}

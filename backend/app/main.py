@@ -160,7 +160,7 @@ class Zone(BaseModel):
 
 @app.get("/api/zones")
 def get_zones():
-    return pipe().safety.zones_as_dicts()
+    return pipe().zones_config()
 
 
 @app.put("/api/zones")
@@ -177,14 +177,12 @@ def put_zones(zones: list[Zone]):
 
 @app.get("/api/workflow")
 def get_workflow():
-    return pipe().workflow.as_dict()
+    return pipe().workflow_state()
 
 
 @app.post("/api/workflow/reset")
 def reset_workflow():
-    p = pipe()
-    p.reset_workflow()
-    return p.workflow.as_dict()
+    return pipe().reset_workflow()
 
 
 # ------------------------------------------------------------------ sources / cameras

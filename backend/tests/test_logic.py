@@ -530,6 +530,36 @@ def test_unavailable_camera_reports_error_instead_of_fake_frames():
     assert missing.state == "error" and "not found" in missing.error
 
 
+def test_api_readers_only_use_the_published_snapshot(tmp_path):
+    """API threads must not read the objects the pipeline thread mutates (it holds _lock for a whole frame).
+    Swap them for objects that fail on any access: every API-side method must still work."""
+    from app.pipeline import Pipeline
+
+    cfg = base_cfg(tmp_path, zones=[RESTRICTED, WORKSTATION])
+    cfg["video"]["mode"], cfg["video"]["file"] = "file", "data/videos/does_not_exist.mp4"
+    cfg["voice"]["enabled"] = False
+    p = Pipeline(cfg)            # not started: no frames, models may be unavailable - that is fine here
+    try:
+        view = p.reset_workflow()
+        assert view["current_index"] == 0 and p.workflow_state() == view
+        p.set_zones([RESTRICTED])
+        assert [z["id"] for z in p.zones_config()] == ["z"]
+
+        class Untouchable:
+            def __getattr__(self, name):
+                raise AssertionError(f"API thread read pipeline internals (.{name})")
+
+        real = p.activity, p.safety, p.workflow, p.tracker
+        p.activity = p.safety = p.workflow = p.tracker = Untouchable()
+        snap = p.snapshot()
+        assert snap["workflow"] == view and [z["id"] for z in snap["zones"]] == ["z"]
+        assert snap["status"]["health"]["safety"]["detail"] == "1 restricted zone(s) enabled"
+        assert p.workflow_state() == view and p.zones_config()[0]["id"] == "z"
+        p.activity, p.safety, p.workflow, p.tracker = real
+    finally:
+        p.stop()
+
+
 # ------------------------------------------------------------------ custom YOLO & workflow tests
 def test_workflow_matches_custom_and_standin_names():
     from app.activity import CompletedActivity
