@@ -31,6 +31,9 @@ from .voice import VoiceAlerter
 
 log = logging.getLogger("bas.pipeline")
 IS_WINDOWS = platform.system() == "Windows"
+# Opening cameras from two threads at once (startup camera probe + pipeline) corrupts the heap
+# inside OpenCV's Windows capture back-ends (0xC0000374), so every open is serialised.
+_CAMERA_OPEN_LOCK = threading.Lock()
 
 
 def _backends() -> list[tuple[str, int]]:
@@ -43,6 +46,11 @@ def _backends() -> list[tuple[str, int]]:
 def open_camera(index: int, width: int, height: int, timeout_s: float = 3.0):
     """Open a webcam and prove it works by reading a real frame.
     Returns (cap, backend_name, error). cap is None on failure."""
+    with _CAMERA_OPEN_LOCK:
+        return _open_camera(index, width, height, timeout_s)
+
+
+def _open_camera(index: int, width: int, height: int, timeout_s: float):
     errors = []
     for name, api in _backends():
         cap = cv2.VideoCapture(index, api)
@@ -298,7 +306,8 @@ class Pipeline:
 
     def rescan_cameras(self) -> list[dict]:
         src = self.source
-        skip = {int(src.value)} if src and src.kind == "webcam" and src.opened else set()
+        # skip our webcam even while it is still opening - probing it concurrently crashes OpenCV
+        skip = {int(src.value)} if src and src.kind == "webcam" else set()
         self.cameras = probe_cameras(4, skip)
         return self.cameras
 
