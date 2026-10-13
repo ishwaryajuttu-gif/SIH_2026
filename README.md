@@ -9,6 +9,24 @@
 Nothing in this repository has been trained on ISRO, BAS or astronaut data. It has not been validated in a real
 experiment or in space, and it is not mission-ready or flight-ready.
 
+## Quick start: run it on your own laptop (Windows)
+
+1. Install **Python 3.11** from [python.org](https://www.python.org/downloads/). On the first installer screen,
+   tick **"Add python.exe to PATH"**. Python 3.10 or 3.12 also work; newer versions may fail to install MediaPipe.
+2. On this page, click the green **Code** button → **Download ZIP**, and extract it.
+   (With Git: `git clone https://github.com/ishwaryajuttu-gif/SIH_2026.git`.)
+3. In the extracted folder, double-click **`setup.bat`**. It needs internet once and takes about 5–10 minutes.
+   Wait for "Setup finished", then press any key.
+4. Double-click **`run.bat`**. The dashboard opens at http://localhost:8000 and uses your webcam.
+   - No webcam? Open Command Prompt in the folder and run `run.bat file` to use the bundled sample video.
+   - **Camera ERROR**: close Zoom/Teams/Camera, and allow desktop apps under Windows Settings →
+     Privacy & security → Camera.
+5. For the full demo (objects on a table, restricted zone, voice alerts), follow
+   [docs/demo-guide.md](docs/demo-guide.md).
+
+Node.js is not needed: the dashboard is pre-built. macOS/Linux: see the manual steps in
+[§13 Installation](#13-installation).
+
 ---
 
 ## 1. Project overview
